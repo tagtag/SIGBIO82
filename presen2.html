@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>【インタラクティブ版】ゲノム解析における射影：特徴選択ツールとしてのTD・PCAの理論的基礎</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', 'Inter', sans-serif;
+        }
+        .slide {
+            display: none;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .slide.active {
+            display: block;
+        }
+        .slide-content {
+            min-height: 500px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 80%;
+            margin: 2rem auto;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: center;
+        }
+        th {
+            background-color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-2xl md:text-3xl font-bold text-slate-700">ゲノム解析における射影：特徴選択ツールとしてのTD・PCAの理論的基礎  https://tagtag.github.io/SIGBIO82/</h1>
+            <p class="text-sm text-slate-500 mt-2">インタラクティブ・スライド</p>
+        </header>
+
+        <main id="slides-container" class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            <!-- Slides will be injected here by JavaScript -->
+        </main>
+
+        <footer class="mt-6 flex items-center justify-center space-x-4">
+            <button id="prevBtn" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed">
+                前へ
+            </button>
+            <div id="slide-counter" class="text-lg font-semibold text-slate-600"></div>
+            <button id="nextBtn" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed">
+                次へ
+            </button>
+        </footer>
+    </div>
+
+    <script>
+        const slidesData = [
+            {
+                title: "1/21: はじめに - ゲノムビッグデータの挑戦",
+                content: `
+                    <p class="text-lg mb-6">現代の生命科学は、膨大なゲノムデータを扱います。<br>このデータから、生命現象や疾患の鍵となる<strong class="text-blue-600">少数の重要な遺伝子</strong>を見つけ出すことが、極めて重要です。</p>
+                    <div class="bg-slate-100 p-6 rounded-lg">
+                        <h3 class="font-bold text-xl mb-3">「特徴選択」における大きな壁</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>遺伝子の数 (N) がサンプル数 (M) を圧倒的に上回る (<strong class="text-red-600">$N \\gg M$</strong>)
+                                <ul class="list-none ml-8 text-slate-600"><li>例: 20,000遺伝子 vs 100サンプル</li></ul>
+                            </li>
+                            <li>これは「次元の呪い」とも呼ばれ、統計的な解析を著しく困難にします。</li>
+                        </ul>
+                    </div>
+                    <p class="mt-8">本日は、この課題に対する強力なアプローチとその理論的背景についてお話しします。</p>
+                `
+            },
+            {
+                title: "2/21: 従来手法とその限界",
+                content: `
+                    <p class="text-lg mb-6">これまで、発現量が変動する遺伝子（DEG）の同定には、<strong class="text-blue-600">統計検定</strong>（t検定など）が広く用いられてきました。</p>
+                    <div class="bg-red-50 border border-red-200 p-6 rounded-lg">
+                        <h3 class="font-bold text-xl mb-3 text-red-700">従来手法の根本的な問題点</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li><strong class="font-semibold">p値のサンプルサイズ依存性</strong>
+                                <ul class="list-none ml-8 text-slate-600"><li>生物学的な差が小さくても、サンプル数（M）を増やせば、p値はいくらでも小さくなり「統計的に有意」という結果が出てしまいます。</li><li>これは、結果の信頼性を損なう大きな要因です。</li></ul>
+                            </li>
+                            <li>この問題を補うため、Fold Change（発現変動幅）などの基準が併用されますが、場当たり的な解決策に過ぎません。</li>
+                        </ul>
+                    </div>
+                    <p class="mt-8 text-xl font-bold text-center">より本質的で、頑健な手法が求められています。</p>
+                `
+            },
+            {
+                title: "3/21: 新しい潮流：教師なし特徴抽出",
+                content: `
+                    <p class="text-lg mb-6">近年、統計検定に代わるアプローチとして、<strong class="text-blue-600">教師なし特徴抽出</strong>が注目を集めています。</p>
+                    <ul class="list-disc list-inside text-left mx-auto max-w-2xl space-y-4 text-lg">
+                        <li><strong class="text-indigo-600">主成分分析 (PCA)</strong> や <strong class="text-indigo-600">テンソル分解 (TD)</strong> を利用します。</li>
+                        <li>これらの手法は、サンプルに付随する「がん/正常」のような<strong class="text-red-600">ラベル情報を一切使わずに</strong>、データ自身の構造から本質的な情報を抽出します。</li>
+                        <li>多くの研究で、従来法を上回る優れた性能を示すことが報告されています。</li>
+                    </ul>
+                    <div class="mt-8 p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+                        <p class="text-green-800 font-semibold">データ自身の声に耳を傾けるアプローチです。</p>
+                    </div>
+                `
+            },
+            {
+                title: "4/21: 本研究の中心的な問い",
+                content: `
+                    <p class="text-lg mb-4">PCAやTDを用いた手法は非常に有効であることが経験的に知られていましたが、その背景には大きな謎が残されていました。</p>
+                    <div class="my-4">
+                        <svg width="700" height="300" viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" class="mx-auto">
+                            <style>
+                                .label { font-size: 16px; font-family: 'Noto Sans JP', Inter, sans-serif; }
+                                .box-label { font-size: 18px; font-family: 'Noto Sans JP', Inter, sans-serif; font-weight: bold; }
+                                .arrow-head { fill: #334155; }
+                            </style>
+                            <defs>
+                                <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                    <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head" />
+                                </marker>
+                            </defs>
+                            <!-- Input Box -->
+                            <g>
+                                <rect x="20" y="100" width="180" height="100" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2" rx="10"></rect>
+                                <text x="110" y="145" text-anchor="middle" class="box-label">ゲノムデータ</text>
+                                <text x="110" y="170" text-anchor="middle" class="label">(N >> M)</text>
+                            </g>
+                            <!-- Arrow 1 -->
+                            <line x1="200" y1="150" x2="280" y2="150" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"></line>
+                            <!-- Black Box -->
+                            <g>
+                                <rect x="280" y="75" width="140" height="150" fill="#1e293b" rx="10"></rect>
+                                <text x="350" y="140" text-anchor="middle" class="box-label" fill="white">PCA / TD</text>
+                                <text x="350" y="170" text-anchor="middle" class="label" fill="#9ca3af">(教師なし特徴抽出)</text>
+                                <text x="350" y="60" text-anchor="middle" font-size="60" fill="#f87171">?</text>
+                                <text x="450" y="60" text-anchor="middle" class="box-label" fill="#f87171">なぜ有効なのか？</text>
+                            </g>
+                            <!-- Arrow 2 -->
+                            <line x1="420" y1="150" x2="500" y2="150" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"></line>
+                            <!-- Output Box -->
+                            <g>
+                                <rect x="500" y="100" width="180" height="100" fill="#dcfce7" stroke="#4ade80" stroke-width="2" rx="10"></rect>
+                                <text x="590" y="140" text-anchor="middle" class="box-label">生物学的に</text>
+                                <text x="590" y="165" text-anchor="middle" class="box-label">意味のある遺伝子</text>
+                            </g>
+                        </svg>
+                    </div>
+                    <p class="text-lg mt-4"><strong class="text-blue-600">本研究の目的：</strong><br>この「なぜ」に答えるため、PCA/TDベース特徴抽出の有効性を理論的に解明し、その成功を合理化することです。</p>
+                `
+            },
+            {
+                title: "5/21: 理論的枠組み(1) - 射影追跡 (Projection Pursuit)",
+                content: `
+                    <p class="text-lg mb-4">本研究の理論的な基盤となるのが、<strong class="text-blue-600">射影追跡（Projection Pursuit, PP）</strong> という考え方です。</p>
+                    <div class="bg-slate-100 p-6 rounded-lg mb-6">
+                        <h3 class="font-bold text-xl mb-3">射影追跡とは？</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>高次元のデータを低次元（通常は1〜2次元）に<strong class="text-indigo-600">射影</strong>し、その射影されたデータが<strong class="text-red-600">「最も面白い」構造</strong>を示す方向を見つけ出す手法。</li>
+                            <li>「面白い」構造とは、例えば正規分布から最もかけ離れた分布や、クラスターが明確に分離するような構造を指します。</li>
+                        </ul>
+                    </div>
+                     <svg width="700" height="400" viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg" class="mx-auto">
+                        <style>
+                            .label { font-size: 16px; font-family: 'Noto Sans JP', Inter, sans-serif; }
+                            .bold-label { font-size: 16px; font-family: 'Noto Sans JP', Inter, sans-serif; font-weight: bold; }
+                            .small-label { font-size: 14px; font-family: 'Noto Sans JP', Inter, sans-serif; fill: #4b5563; }
+                            .axis-line { stroke: #6b7280; stroke-width: 1.5; }
+                            .proj-line { stroke: #9ca3af; stroke-width: 1; stroke-dasharray: 2, 2; }
+                        </style>
+                        <rect width="100%" height="100%" fill="#f9fafb"/>
+
+                        <!-- High-dimensional data -->
+                        <text x="175" y="30" class="bold-label" text-anchor="middle">高次元データ (2Dで表現)</text>
+                        <g id="data-points">
+                            <!-- Cluster 1 (blue) -->
+                            <circle cx="120" cy="80" r="5" fill="#3b82f6" opacity="0.7"/>
+                            <circle cx="140" cy="110" r="5" fill="#3b82f6" opacity="0.7"/>
+                            <circle cx="100" cy="130" r="5" fill="#3b82f6" opacity="0.7"/>
+                            <circle cx="150" cy="60" r="5" fill="#3b82f6" opacity="0.7"/>
+                            <circle cx="90" cy="90" r="5" fill="#3b82f6" opacity="0.7"/>
+                            <!-- Cluster 2 (red) -->
+                            <circle cx="200" cy="150" r="5" fill="#ef4444" opacity="0.7"/>
+                            <circle cx="220" cy="120" r="5" fill="#ef4444" opacity="0.7"/>
+                            <circle cx="240" cy="170" r="5" fill="#ef4444" opacity="0.7"/>
+                            <circle cx="190" cy="180" r="5" fill="#ef4444" opacity="0.7"/>
+                            <circle cx="250" cy="140" r="5" fill="#ef4444" opacity="0.7"/>
+                        </g>
+
+                        <!-- Projection A (Good direction) -->
+                        <g id="projection-A">
+                            <text x="175" y="240" class="bold-label" text-anchor="middle">射影 A (良い方向)</text>
+                            <line x1="50" y1="350" x2="300" y2="250" class="axis-line" id="axis-A"/>
+                            <g transform="translate(175, 300) rotate(-21.8)">
+                                <!-- Projection lines -->
+                                <line x1="-58" y1="-2" x2="-58" y2="-60" class="proj-line"/>
+                                <line x1="-39" y1="-2" x2="-39" y2="-33" class="proj-line"/>
+                                <line x1="26" y1="-2" x2="26" y2="20" class="proj-line"/>
+                                <line x1="43" y1="-2" x2="43" y2="-10" class="proj-line"/>
+                                <!-- Projected points -->
+                                <circle cx="-58" r="5" fill="#3b82f6"/>
+                                <circle cx="-45" r="5" fill="#3b82f6"/>
+                                <circle cx="-25" r="5" fill="#3b82f6"/>
+                                <circle cx="-70" r="5" fill="#3b82f6"/>
+                                <circle cx="-15" r="5" fill="#3b82f6"/>
+                                <circle cx="45" r="5" fill="#ef4444"/>
+                                <circle cx="30" r="5" fill="#ef4444"/>
+                                <circle cx="80" r="5" fill="#ef4444"/>
+                                <circle cx="55" r="5" fill="#ef4444"/>
+                                <circle cx="65" r="5" fill="#ef4444"/>
+                            </g>
+                             <text x="175" y="380" class="small-label" text-anchor="middle">クラスターが明確に分離</text>
+                        </g>
+
+                        <!-- Projection B (Bad direction) -->
+                        <g id="projection-B">
+                            <text x="525" y="240" class="bold-label" text-anchor="middle">射影 B (悪い方向)</text>
+                            <line x1="450" y1="350" x2="450" y2="250" class="axis-line" id="axis-B"/>
+                             <g transform="translate(450, 300)">
+                                <!-- Projection lines -->
+                                <line x1="0" y1="-20" x2="-230" y2="-20" class="proj-line"/>
+                                 <line x1="0" y1="10" x2="-250" y2="10" class="proj-line"/>
+                                <line x1="0" y1="50" x2="-250" y2="50" class="proj-line"/>
+                                <line x1="0" y1="-40" x2="-300" y2="-40" class="proj-line"/>
+                                <!-- Projected points -->
+                                <circle cy="-40" r="5" fill="#3b82f6"/>
+                                <circle cy="-20" r="5" fill="#3b82f6"/>
+                                <circle cy="0" r="5" fill="#3b82f6"/>
+                                 <circle cy="-10" r="5" fill="#ef4444"/>
+                                <circle cy="-50" r="5" fill="#ef4444"/>
+                                <circle cy="20" r="5" fill="#ef4444"/>
+                                <circle cy="30" r="5" fill="#ef4444"/>
+                                <circle cy="50" r="5" fill="#ef4444"/>
+                            </g>
+                            <text x="525" y="380" class="small-label" text-anchor="middle">クラスターが混在</text>
+                        </g>
+                    </svg>
+                    <p class="text-center text-sm text-slate-500 mt-2">高次元の点群を、ある軸に射影するとクラスターが分離し（面白い射影）、<br>別の軸では混ざってしまう（面白くない射影）様子。</p>
+                `
+            },
+            {
+                title: "6/21: 理論的枠組み(2) - PCAとK-meansクラスタリング",
+                content: `
+                    <p class="text-lg mb-4">射影追跡の考え方を理解する上で、<strong class="text-blue-600">PCAとK-meansクラスタリングの関係</strong>が鍵となります。</p>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="bg-slate-100 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-3">K-meansクラスタリング</h3>
+                            <p>データをK個のグループに分類し、各グループの中心（<strong class="text-indigo-600">セントロイド</strong>）を計算する手法。</p>
+                        </div>
+                        <div class="bg-slate-100 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-3">主成分分析 (PCA)</h3>
+                            <p>データの分散が最大になる方向（<strong class="text-indigo-600">主成分</strong>）を見つける手法。</p>
+                        </div>
+                    </div>
+                    <div class="mt-8 p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <h3 class="font-bold text-xl mb-3 text-yellow-800">重要な理論的背景 (Ding & He, 2004)</h3>
+                        <p class="text-lg">PCAによって得られる<strong class="font-semibold">主成分ベクトルが張る空間</strong>は、K-meansで最適化されたクラスターの<strong class="font-semibold">セントロイドが張る空間と一致する</strong>ことが知られています。</p>
+                    </div>
+                `
+            },
+            {
+                title: "7/21: 理論の核心：PCAは「教師なし」でクラスターを見つける",
+                content: `
+                    <p class="text-lg mb-4">「PCAが張る空間」と「セントロイドが張る空間」が一致するということは…</p>
+                    <div class="my-6 p-8 bg-blue-50 border border-blue-200 rounded-xl shadow-lg">
+                        <p class="text-xl md:text-2xl font-bold text-blue-800 text-center">⇒ PCAは、我々が「がんと正常」といったラベルを教えなくても、データに内在するクラスター構造を自動的に見つけ出し、その構造を最もよく表す方向（主成分）を抽出している、と解釈できます。</p>
+                    </div>
+                    <p class="text-lg mt-4">これが、PCAベースの特徴抽出が機能する理論的な核心です。</p>
+                    <svg width="700" height="350" viewBox="0 0 700 350" xmlns="http://www.w3.org/2000/svg" class="mx-auto mt-6">
+                         <style>
+                            .label { font-family: 'Noto Sans JP', Inter, sans-serif; font-size: 14px; text-anchor: middle; }
+                            .title-label { font-weight: bold; font-size: 16px; }
+                            .arrow { stroke: #334155; stroke-width: 2.5; marker-end: url(#arrowhead-svg-7); }
+                        </style>
+                        <defs>
+                            <marker id="arrowhead-svg-7" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+                            </marker>
+                        </defs>
+                        <rect width="100%" height="100%" fill="#f9fafb"/>
+
+                        <!-- Panel 1: Data with unknown structure -->
+                        <g id="panel1">
+                            <rect x="10" y="40" width="200" height="200" fill="#ffffff" stroke="#e5e7eb" rx="8"/>
+                            <text x="110" y="25" class="label title-label">1. 未知の構造を持つデータ</text>
+                            <g transform="translate(110, 140)">
+                                <circle cx="-30" cy="-40" r="4" fill="#60a5fa" opacity="0.8"/>
+                                <circle cx="-45" cy="-20" r="4" fill="#60a5fa" opacity="0.8"/>
+                                <circle cx="-20" cy="-10" r="4" fill="#60a5fa" opacity="0.8"/>
+                                <circle cx="-40" cy="10" r="4" fill="#60a5fa" opacity="0.8"/>
+                                <circle cx="30" cy="40" r="4" fill="#f87171" opacity="0.8"/>
+                                <circle cx="45" cy="20" r="4" fill="#f87171" opacity="0.8"/>
+                                <circle cx="20" cy="10" r="4" fill="#f87171" opacity="0.8"/>
+                                <circle cx="40" cy="-10" r="4" fill="#f87171" opacity="0.8"/>
+                            </g>
+                             <text x="110" y="260" class="label">ラベル情報なし</text>
+                        </g>
+                        
+                        <line x1="220" y1="140" x2="270" y2="140" class="arrow" />
+
+                        <!-- Panel 2: Comparison -->
+                        <g id="panel2">
+                            <!-- K-means -->
+                            <rect x="280" y="10" width="140" height="150" fill="#fefce8" stroke="#facc15" stroke-width="1.5" rx="8"/>
+                            <text x="350" y="35" class="label title-label">2a. K-means適用</text>
+                            <g transform="translate(350, 95)">
+                                <circle cx="-35" cy="-5" r="4" fill="#60a5fa" opacity="0.8"/>
+                                <circle cx="35" cy="5" r="4" fill="#f87171" opacity="0.8"/>
+                                <circle cx="-35" cy="-5" r="10" fill="none" stroke="#2563eb" stroke-width="2"/>
+                                <circle cx="35" cy="5" r="10" fill="none" stroke="#dc2626" stroke-width="2"/>
+                                <text x="0" y="45" class="label">セントロイド発見</text>
+                            </g>
+                            
+                            <!-- PCA -->
+                            <rect x="280" y="180" width="140" height="150" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5" rx="8"/>
+                            <text x="350" y="205" class="label title-label">2b. PCA適用</text>
+                            <g transform="translate(350, 265) rotate(-10)">
+                                <line x1="-50" y1="0" x2="50" y2="0" stroke="#dc2626" stroke-width="2.5"/>
+                            </g>
+                            <text x="350" y="315" class="label">最大分散の方向(PC1)発見</text>
+                        </g>
+
+                        <line x1="430" y1="85" x2="480" y2="140" class="arrow" />
+                        <line x1="430" y1="255" x2="480" y2="140" class="arrow" />
+
+                        <!-- Panel 3: Equivalence -->
+                        <g id="panel3">
+                            <rect x="490" y="40" width="200" height="200" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" rx="8"/>
+                            <text x="590" y="25" class="label title-label">3. 構造の一致</text>
+                             <g transform="translate(590, 140)">
+                                <!-- Centroid line -->
+                                <line x1="-35" y1="-5" x2="35" y2="5" stroke="#facc15" stroke-width="3" stroke-dasharray="4 4" />
+                                <!-- PCA line -->
+                                <g transform="rotate(-10)">
+                                     <line x1="-60" y1="0" x2="60" y2="0" stroke="#dc2626" stroke-width="2.5" />
+                                </g>
+                                <circle cx="-35" cy="-5" r="5" fill="#2563eb" />
+                                <circle cx="35" cy="5" r="5" fill="#dc2626" />
+                             </g>
+                            <text x="590" y="260" class="label">セントロイド方向 ≒ PC1方向</text>
+                        </g>
+                    </svg>
+                `
+            },
+            {
+                title: "8/21: 本研究の仮説",
+                content: `
+                    <p class="text-lg mb-4">以上の理論的背景から、本研究では以下の仮説を立てました。</p>
+                    <div class="my-6 p-8 bg-slate-100 rounded-xl shadow-inner">
+                        <h3 class="font-bold text-xl mb-3 text-center">仮説</h3>
+                        <p class="text-lg">PCA/TDベースの教師なし特徴抽出が成功する理由は、その手法が<strong class="text-blue-600">「がんと正常」のような生物学的に意味のあるクラスターのセントロイド方向へデータを射影していることと等価だからである。</strong></p>
+                        <hr class="my-4">
+                        <p class="text-slate-600 text-center">つまり、手法が見つけ出す「面白い射影方向」が、生物学的に重要な方向と一致している、という仮説です。</p>
+                    </div>
+                `
+            },
+            {
+                title: "9/21: 仮説の検証アプローチ",
+                content: `
+                    <p class="text-lg mb-6">この仮説を検証するため、2つの異なるアプローチの結果を比較します。</p>
+                    <div class="grid md:grid-cols-2 gap-6 items-stretch">
+                        <div class="bg-blue-50 border border-blue-200 p-6 rounded-lg flex flex-col">
+                            <h3 class="font-bold text-xl mb-3 text-blue-700">1. TDベース特徴抽出 (教師なし)</h3>
+                            <p class="flex-grow">TDを用いて、データ内在の構造（特異値ベクトル）を純粋に抽出する。</p>
+                        </div>
+                        <div class="bg-green-50 border border-green-200 p-6 rounded-lg flex flex-col">
+                            <h3 class="font-bold text-xl mb-3 text-green-700">2. 射影追跡 (PP) (教師あり)</h3>
+                            <p class="flex-grow">意図的に「がん/正常」という正解ラベルの方向にデータを射影する。</p>
+                        </div>
+                    </div>
+                    <div class="mt-8 text-center text-xl p-4 bg-yellow-100 rounded-lg">
+                        <p><strong class="font-semibold">⇒ もし仮説が正しければ、この2つの手法で選ばれた遺伝子は強く一致するはずです。</strong></p>
+                    </div>
+                `
+            },
+            {
+                title: "10/21: 使用データセット",
+                content: `
+                    <p class="text-lg mb-6">検証には、過去にTDベース特徴抽出が有効性を示した3つの実際のデータセットを用いました。</p>
+                    <div class="space-y-4">
+                        <div class="bg-slate-100 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-2">データセット 1 & 2: 腎臓がん</h3>
+                            <p>腎臓がん組織と正常組織の<strong class="text-indigo-600">mRNA</strong>および<strong class="text-indigo-600">miRNA</strong>発現データ。</p>
+                            <p class="mt-1 text-slate-600">生物学的な違い：「がん vs 正常」</p>
+                        </div>
+                        <div class="bg-slate-100 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-2">データセット 3: SARS-CoV-2</h3>
+                            <p>SARS-CoV-2ウイルスを感染させたヒト培養細胞の遺伝子発現データ。</p>
+                            <p class="mt-1 text-slate-600">生物学的な違い：「ウイルス感染 vs 非感染」</p>
+                        </div>
+                    </div>
+                `
+            },
+             {
+                title: "11/21: 遺伝子へのP値の割り当て方法",
+                content: `
+                    <p class="text-lg mb-6">生物学的に意味のある特異値ベクトル (u) が見つかった後、各遺伝子 (i) がそのパターンにどれだけ寄与しているかを評価するためにP値を計算します。</p>
+                    <div class="my-4">
+                        <svg width="700" height="250" viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" class="mx-auto">
+                            <style>
+                                .label-p { font-size: 16px; font-family: 'Noto Sans JP', Inter, sans-serif; text-anchor: middle; }
+                                .box-label-p { font-size: 18px; font-family: 'Noto Sans JP', Inter, sans-serif; font-weight: bold; text-anchor: middle;}
+                                .formula-p { font-family: 'Times New Roman', serif; font-size: 20px; text-anchor: middle; }
+                                .arrow-head-p { fill: #334155; }
+                            </style>
+                            <defs>
+                                <marker id="arrow-pcalc" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                    <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head-p" />
+                                </marker>
+                            </defs>
+                            <!-- 1. Singular Vector -->
+                            <g>
+                                <rect x="20" y="75" width="150" height="100" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2" rx="10"></rect>
+                                <text x="95" y="115" class="box-label-p">特異値ベクトル u</text>
+                                <text x="95" y="140" class="label-p">(各遺伝子のスコア)</text>
+                            </g>
+                            <!-- Arrow 1 -->
+                            <line x1="170" y1="125" x2="230" y2="125" stroke="#334155" stroke-width="2" marker-end="url(#arrow-pcalc)"></line>
+                            <!-- 2. P-value Calculation -->
+                            <g>
+                                <rect x="230" y="50" width="240" height="150" fill="#fefce8" stroke="#facc15" stroke-width="2" rx="10"></rect>
+                                <text x="350" y="85" class="box-label-p">P値計算</text>
+                                <text x="350" y="125" class="formula-p">P<tspan baseline-shift="sub" font-size="0.7em">i</tspan> = P<tspan baseline-shift="sub" font-size="0.7em">χ²</tspan>[ > (u<tspan baseline-shift="sub" font-size="0.7em">i</tspan> / σ)² ]</text>
+                                <text x="350" y="155" class="label-p">(カイ二乗分布を仮定)</text>
+                            </g>
+                            <!-- Arrow 2 -->
+                            <line x1="470" y1="125" x2="530" y2="125" stroke="#334155" stroke-width="2" marker-end="url(#arrow-pcalc)"></line>
+                             <!-- 3. BH Correction -->
+                            <g>
+                                <rect x="530" y="75" width="150" height="100" fill="#dcfce7" stroke="#4ade80" stroke-width="2" rx="10"></rect>
+                                <text x="605" y="115" class="box-label-p">多重検定補正</text>
+                                <text x="605" y="140" class="label-p">(BH法)</text>
+                            </g>
+                        </svg>
+                    </div>
+                    <ol class="list-decimal list-inside space-y-2 text-left mx-auto max-w-3xl">
+                        <li>帰無仮説として、特異値ベクトル <b>u</b> の各成分 (<b>u<sub>i</sub></b>) が正規分布に従うと仮定します。</li>
+                        <li>各成分を標準偏差 (σ) で割り、2乗することで、カイ二乗 (χ²) 分布に従う値に変換します。</li>
+                        <li>この値を用いて、カイ二乗検定から各遺伝子のP値を算出します。</li>
+                        <li>最後に、多重検定補正（本研究ではBH法）を行い、調整済みP値を得て、有意な遺伝子を選択します。</li>
+                    </ol>
+                `
+            },
+            {
+                title: "12/21: Case Study 1：腎臓がんデータでの比較",
+                content: `
+                    <p class="text-lg mb-4">まず、腎臓がんのデータセットで、TD（教師なし）とPP（教師あり）の結果を比較しました。</p>
+                    <div class="bg-slate-100 p-6 rounded-lg mb-6">
+                        <h3 class="font-bold text-xl mb-3">結果の概要</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>TDで「がんと正常」を最もよく区別する特異値ベクトルを特定し、遺伝子を選択。</li>
+                            <li>PPで「がん/正常」ラベルに射影し、遺伝子を選択。</li>
+                            <li class="font-semibold text-red-600">両手法で選択された遺伝子・miRNAは、極めて高い一致を示しました。</li>
+                        </ul>
+                    </div>
+                    <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g004&size=large" alt="論文Fig.4: TDとPPのp値のQQプロット" class="mx-auto rounded-lg shadow-md max-w-full h-auto">
+                    <p class="text-center text-sm text-slate-500 mt-2">Fig. 4. QQプロットは、2つの手法で計算されたp値の分布が酷似していることを示します。</p>
+                `
+            },
+            {
+                title: "13/21: 腎臓がんデータでの一致度（表）",
+                content: `
+                    <p class="text-lg mb-4">選択された遺伝子の一致度をクロス集計表で見てみましょう。（論文 Table 1, 2）</p>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="font-bold text-xl mb-2 text-center">mRNA (19,536遺伝子中)</h3>
+                            <table>
+                                <thead><tr><th>(p<0.01)</th><th>PP (選択)</th><th>PP (非選択)</th></tr></thead>
+                                <tbody>
+                                    <tr><td><strong>TD (選択)</strong></td><td class="bg-green-100 font-bold">61</td><td>11</td></tr>
+                                    <tr><td><strong>TD (非選択)</strong></td><td>17</td><td>19,447</td></tr>
+                                </tbody>
+                            </table>
+                            <p class="text-center text-sm text-slate-500">Fisher's exact test, p = 1.90 x 10⁻¹⁴⁹</p>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl mb-2 text-center">miRNA (825 miRNA中)</h3>
+                            <table>
+                                <thead><tr><th>(p<0.01)</th><th>PP (選択)</th><th>PP (非選択)</th></tr></thead>
+                                <tbody>
+                                    <tr><td><strong>TD (選択)</strong></td><td class="bg-green-100 font-bold">11</td><td>0</td></tr>
+                                    <tr><td><strong>TD (非選択)</strong></td><td>2</td><td>812</td></tr>
+                                </tbody>
+                            </table>
+                            <p class="text-center text-sm text-slate-500">Fisher's exact test, p = 2.76 x 10⁻²³</p>
+                        </div>
+                    </div>
+                    <p class="mt-6 text-xl text-center font-semibold text-blue-700">⇒ この驚異的な一致は、TDが「がん/正常」という生物学的意味を持つ方向を的確に捉えていることを強く示唆します。</p>
+                `
+            },
+            {
+                title: "14/21: Case Study 2：SARS-CoV-2 データでの比較",
+                content: `
+                    <p class="text-lg mb-4">次に、SARS-CoV-2感染細胞のデータセットでも同様の比較を行いました。（論文 Table 5）</p>
+                    <div class="bg-slate-100 p-6 rounded-lg mb-6">
+                        <h3 class="font-bold text-xl mb-3">結果の概要</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>TDで「ウイルス感染の有無」を区別する特異値ベクトルを特定し、<strong class="text-indigo-600">163遺伝子</strong>を選択。</li>
+                            <li>PPで「感染/非感染」ラベルに射影し、<strong class="text-indigo-600">155遺伝子</strong>を選択。</li>
+                            <li class="font-semibold text-red-600">腎臓がんデータと同様、両手法で選択された遺伝子は非常によく一致しました。</li>
+                        </ul>
+                    </div>
+                    <h3 class="font-bold text-xl mb-2 text-center">遺伝子クロス集計表 (21,897遺伝子中)</h3>
+                     <table>
+                        <thead><tr><th>(p<0.01)</th><th>PP (選択)</th><th>PP (非選択)</th></tr></thead>
+                        <tbody>
+                            <tr><td><strong>TD (選択)</strong></td><td class="bg-green-100 font-bold">103</td><td>60</td></tr>
+                            <tr><td><strong>TD (非選択)</strong></td><td>52</td><td>21,582</td></tr>
+                        </tbody>
+                    </table>
+                    <p class="text-center text-sm text-slate-500">Fisher's exact test, p = 1.40 x 10⁻²⁴¹</p>
+                `
+            },
+            {
+                title: "15/21: なぜTD（テンソル分解）を使うのか？",
+                content: `
+                    <p class="text-lg mb-4">単純な行列データに適用するPCAに対し、なぜ多次元のテンソルを扱うTDが必要なのでしょうか？</p>
+                    <div class="bg-blue-50 border border-blue-200 p-6 rounded-lg mb-6">
+                        <h3 class="font-bold text-xl mb-3 text-blue-700">TDの利点</h3>
+                        <p>TDは、複数の要因（例：細胞株、薬剤処理、個人差など）が絡む複雑なデータ構造を、それぞれの要因に分解して捉えることができます。</p>
+                    </div>
+                    <p class="mb-4">下の図は、サンプルの特性ベクトルと「感染/非感染」ラベルとの相関を示しています。（論文 Fig. 8）</p>
+                    <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g008&size=large" alt="論文Fig.8: 左がPCA(SVD)、右がTD(HOSVD)によるサンプルベクトル" class="mx-auto rounded-lg shadow-md max-w-full h-auto">
+                    <div class="grid grid-cols-2 gap-4 text-center mt-2">
+                        <div><strong>左（PCA）:</strong> ラベルとの相関が低い</div>
+                        <div><strong>右（TD）:</strong> ラベルとの相関が非常に高い</div>
+                    </div>
+                    <p class="mt-6 text-xl text-center font-semibold">⇒ TDは、PCAよりもノイズに惑わされにくく、より的確に生物学的なシグナルを分離・抽出できる強力なツールです。</p>
+                `
+            },
+            {
+                title: "16/21: 検証(1) - p値の閾値は妥当か？",
+                content: `
+                    <p class="text-lg mb-6">これまで経験的に「正規分布を仮定した調整済みp値 < 0.01」という基準が使われてきました。</p>
+                     <div class="my-8 p-8 bg-slate-100 rounded-xl shadow-inner text-center">
+                        <p class="text-2xl md:text-3xl font-bold text-red-700">しかし、この仮定と閾値は<br>本当に妥当なのでしょうか？</p>
+                    </div>
+                    <p class="text-lg">この長年の疑問に答えるため、より信頼性の高いとされる<strong class="text-blue-600">シャッフリング法</strong>の結果と比較検証を行いました。</p>
+                `
+            },
+            {
+                title: "17/21: 検証(2) - シャッフリング法によるp値計算",
+                content: `
+                    <h3 class="font-bold text-2xl mb-6 text-center">シャッフリング法とは？</h3>
+                    <ol class="list-decimal list-inside space-y-4 text-left mx-auto max-w-2xl text-lg">
+                        <li>各サンプル内で、遺伝子の発現データの並び順をランダムに入れ替える。</li>
+                        <li>これにより、遺伝子と発現値の関連が破壊された「意味のない」データセットが作られる。</li>
+                        <li>このデータにTDを適用し、偶然得られるスコアの分布（<strong class="text-indigo-600">帰無分布</strong>）を作成する。</li>
+                        <li>実際のスコアが、この帰無分布の上位何%に位置するかを計算し、p値とする。</li>
+                    </ol>
+                    <div class="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                        <p class="text-yellow-800 font-semibold">計算コストは非常に高いですが、データの分布に仮定を置かないため、頑健な方法とされています。</p>
+                    </div>
+                `
+            },
+            {
+                title: "18/21: シャッフリング法によるp値分布の実例",
+                content: `
+                    <p class="text-lg mb-4">シャッフリング法によって生成された帰無分布から計算されたp値の実際のヒストグラムです。</p>
+                    <div class="grid md:grid-cols-3 gap-2">
+                        <div class="text-center">
+                            <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g001&size=large" alt="論文 Fig. 1" class="mx-auto rounded-md border">
+                            <p class="text-sm mt-1"><strong>Fig.1:</strong> データセット1 (miRNA)</p>
+                        </div>
+                        <div class="text-center">
+                            <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g002&size=large" alt="論文 Fig. 2" class="mx-auto rounded-md border">
+                             <p class="text-sm mt-1"><strong>Fig.2:</strong> データセット1 (mRNA)</p>
+                        </div>
+                        <div class="text-center">
+                            <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g003&size=large" alt="論文 Fig. 3" class="mx-auto rounded-md border">
+                             <p class="text-sm mt-1"><strong>Fig.3:</strong> データセット3 (遺伝子)</p>
+                        </div>
+                    </div>
+                    <p class="mt-4 text-center text-base">パネル(A)ではp値が1付近に偏る傾向が見られますが、発現量の高い遺伝子に限定する(B)ことで、より一様な分布に近づきます。</p>
+                `
+            },
+            {
+                title: "19/21: 検証(3) - 2つの基準の一致",
+                content: `
+                    <h3 class="font-bold text-2xl mb-6 text-center">結果</h3>
+                    <div class="p-8 bg-green-50 border-2 border-dashed border-green-300 rounded-xl text-center">
+                        <p class="text-lg mb-4"><strong class="text-blue-600">TDベース特徴抽出（調整済みp < 0.01）</strong>で選択された遺伝子群は、</p>
+                        <p class="text-lg mb-4"><strong class="text-blue-600">シャッフリング法（調整済みp < 0.1）</strong>で選択された遺伝子群と、</p>
+                        <p class="text-2xl font-bold text-green-700">全てのデータセットで非常によく一致しました。</p>
+                    </div>
+                    <p class="mt-6 text-xl text-center font-semibold">⇒ 経験的に使われてきた簡易な基準が、頑健な手法の結果とよく相関しており、<strong class="text-red-600">実用上有効である</strong>ことが初めて裏付けられました。</p>
+                `
+            },
+            {
+                title: "20/21: 本研究のまとめ",
+                content: `
+                    <img src="https://journals.plos.org/plosone/article/figure/image?id=10.1371/journal.pone.0275472.g007&size=large" alt="論文Fig.7: 本研究のワークフロー" class="mx-auto rounded-lg shadow-md mb-6 max-w-full h-auto">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="bg-blue-50 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-3 text-blue-700">理論的結合</h3>
+                            <p>TD/PCAによる特徴抽出は、K-meansによるクラスタリングと等価であり、生物学的に意味のある方向への射影と解釈できる。</p>
+                        </div>
+                        <div class="bg-green-50 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl mb-3 text-green-700">実用的妥当性</h3>
+                            <p>経験的なp値の基準(p<0.01)は、頑健なシャッフリング法(p<0.1)と高い一致を示した。</p>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                title: "21/21: 結論",
+                content: `
+                    <div class="p-8 bg-slate-100 rounded-xl h-full flex flex-col justify-center items-center">
+                        <p class="text-lg md:text-xl mb-6">本研究は、ゲノム解析における特徴選択ツールとして、<strong class="text-blue-600">PCAおよびTDベース教師なし特徴抽出の有効性を、射影という観点から理論的に初めて合理化しました。</strong></p>
+                        <p class="text-lg md:text-xl mb-6">これらの手法は、サンプル数が少ない高次元データ（$N \\gg M$）から、生物学的に意味のある特徴量を抽出するための、<strong class="text-blue-600">強力かつ理論的に裏付けられたアプローチ</strong>です。</p>
+                        <p class="text-lg md:text-xl font-semibold">研究者は、データに隠された本質的な生物学的パターンを発見するために、これらの手法を自信を持って活用することができます。</p>
+                    </div>
+                `
+            },
+            {
+                title: "22/22: 今後の展望と謝辞",
+                content: `
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div class="bg-slate-100 p-6 rounded-lg">
+                             <h3 class="font-bold text-2xl mb-4">今後の展望</h3>
+                            <ul class="list-disc list-inside space-y-3">
+                                <li><strong class="font-semibold">理論の拡張:</strong> 3つ以上のクラスターが存在する場合や、連続的な変化（時間経過など）を捉える場合の理論拡張。</li>
+                                <li><strong class="font-semibold">応用範囲の拡大:</strong> マルチオミクスデータの統合解析へのより広範な応用。個別化医療に向けたバイオマーカー探索の加速。</li>
+                            </ul>
+                        </div>
+                         <div class="bg-blue-50 p-6 rounded-lg">
+                            <h3 class="font-bold text-2xl mb-4 text-blue-800">謝辞</h3>
+                            <ul class="list-disc list-inside space-y-3">
+                                <li><strong>共同研究者:</strong> Dr. Turki Turki</li>
+                                <li><strong>研究費支援:</strong> 日本学術振興会（JSPS）科研費</li>
+                            </ul>
+                            <p class="mt-8 text-xl font-bold text-center">ご清聴ありがとうございました。</p>
+                        </div>
+                    </div>
+                `
+            }
+        ];
+
+        let currentSlide = 0;
+        const slidesContainer = document.getElementById('slides-container');
+        const slideCounter = document.getElementById('slide-counter');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        
+        function renumberTitles() {
+             slidesData.forEach((slide, index) => {
+                const titleParts = slide.title.split(': ');
+                slide.title = `${index + 1}/${slidesData.length}: ${titleParts.slice(1).join(': ')}`;
+            });
+        }
+        
+        function initialSetup() {
+            // This function is just to keep the structure.
+            // All slide data is now hardcoded.
+        }
+
+        function renderSlides() {
+            slidesContainer.innerHTML = '';
+            slidesData.forEach((slide, index) => {
+                const slideEl = document.createElement('div');
+                slideEl.className = 'slide p-6 md:p-12';
+                slideEl.id = `slide-${index}`;
+                
+                // For MathJax rendering
+                let content = slide.content.replace(/\$N \\gg M\$/g, '\\(N \\gg M\\)');
+
+                slideEl.innerHTML = `
+                    <div class="slide-content flex flex-col justify-center text-center">
+                        <h2 class="text-2xl md:text-3xl font-bold mb-8">${slide.title}</h2>
+                        <div class="text-left md:text-center text-lg leading-relaxed">${content}</div>
+                    </div>
+                `;
+                slidesContainer.appendChild(slideEl);
+            });
+            updateView();
+        }
+
+        function updateView() {
+            document.querySelectorAll('.slide').forEach((slide, index) => {
+                slide.classList.toggle('active', index === currentSlide);
+            });
+            slideCounter.textContent = `スライド ${currentSlide + 1} / ${slidesData.length}`;
+            prevBtn.disabled = currentSlide === 0;
+            nextBtn.disabled = currentSlide === slidesData.length - 1;
+        }
+
+        prevBtn.addEventListener('click', () => {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateView();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentSlide < slidesData.length - 1) {
+                currentSlide++;
+                updateView();
+            }
+        });
+
+        initialSetup();
+        renderSlides();
+    </script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</body>
+</html>
